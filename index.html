@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f7f2">
+  <meta name="description" content="BHENK.INC — unduh media dari 16 platform.">
+  <title>BHENK.INC — Media Downloader</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page-shell">
+    <header class="site-header"><a class="wordmark" href="#" aria-label="BHENK.INC"><span class="brand-symbol" aria-hidden="true">B</span><span class="brand-name">BHENK<span>.INC</span></span></a><span class="header-note">MEDIA DOWNLOADER <i></i> 16 PLATFORMS</span></header>
+    <section class="platform-section" aria-labelledby="platformTitle">
+      <div class="section-top"><div><div class="eyebrow">PILIH PLATFORM</div><h1 id="platformTitle">Simpan yang<br><span>ingin kamu simpan.</span></h1></div><p>Video, foto, dan media publik.<br>Pilih platform untuk mulai.</p></div>
+      <div class="platform-grid">
+        <button class="platform-item" type="button" data-platform="TikTok"><b class="platform-logo tiktok">♪</b><span>TikTok</span><small>VIDEO · AUDIO</small></button>
+        <button class="platform-item" type="button" data-platform="Instagram"><b class="platform-logo insta">◎</b><span>Instagram</span><small>REELS · FOTO</small></button>
+        <button class="platform-item" type="button" data-platform="YouTube"><b class="platform-logo youtube">▶</b><span>YouTube</span><small>VIDEO · SHORTS</small></button>
+        <button class="platform-item" type="button" data-platform="Twitter / X"><b class="platform-logo x-icon">𝕏</b><span>Twitter / X</span><small>VIDEO · GIF</small></button>
+        <button class="platform-item" type="button" data-platform="Spotify"><b class="platform-logo spotify">≋</b><span>Spotify</span><small>MUSIK · PLAYLIST</small></button>
+        <button class="platform-item" type="button" data-platform="Apple Music"><b class="platform-logo apple">♪</b><span>Apple Music</span><small>MUSIK · ALBUM</small></button>
+        <button class="platform-item" type="button" data-platform="Pinterest"><b class="platform-logo pin">P</b><span>Pinterest</span><small>FOTO · VIDEO</small></button>
+        <button class="platform-item" type="button" data-platform="Facebook"><b class="platform-logo facebook">f</b><span>Facebook</span><small>VIDEO · FOTO</small></button>
+        <button class="platform-item" type="button" data-platform="Threads"><b class="platform-logo threads">＠</b><span>Threads</span><small>VIDEO · FOTO</small></button>
+        <button class="platform-item" type="button" data-platform="Bilibili"><b class="platform-logo bili">▤</b><span>Bilibili</span><small>VIDEO</small></button>
+        <button class="platform-item" type="button" data-platform="Pixiv"><b class="platform-logo pixiv">P</b><span>Pixiv</span><small>ILUSTRASI</small></button>
+        <button class="platform-item" type="button" data-platform="Douyin"><b class="platform-logo douyin">♪</b><span>Douyin</span><small>VIDEO · AUDIO</small></button>
+        <button class="platform-item" type="button" data-platform="RedNote"><b class="platform-logo rednote">小</b><span>RedNote</span><small>FOTO · VIDEO</small></button>
+        <button class="platform-item" type="button" data-platform="Bandcamp"><b class="platform-logo bandcamp">b</b><span>Bandcamp</span><small>MUSIK · ALBUM</small></button>
+        <button class="platform-item" type="button" data-platform="Reddit"><b class="platform-logo reddit">●</b><span>Reddit</span><small>VIDEO · GIF</small></button>
+        <button class="platform-item" type="button" data-platform="TeraBox"><b class="platform-logo tera">T</b><span>TeraBox</span><small>VIDEO · FILE</small></button>
+      </div>
+      <div class="section-foot"><span>BHENK.INC</span><span>16 PLATFORM <i>✳</i> SATU TEMPAT</span></div>
+    </section>
+  </main>
+  <dialog class="downloader-dialog" id="downloaderDialog" aria-labelledby="downloaderTitle">
+    <div class="dialog-head"><div><span class="eyebrow">BHENK.INC / UNDUH MEDIA</span><h2 id="downloaderTitle">Unduh video atau foto</h2></div><button class="dialog-close" id="closeDownloader" aria-label="Tutup downloader">×</button></div>
+    <div class="dialog-content"><p class="dialog-hint">Tempel tautan media publik. BHENK.INC akan mencari file yang bisa diunduh.</p>
+      <form id="downloadForm"><label class="url-field"><span>TAUTAN MEDIA</span><input id="mediaUrl" name="url" type="url" placeholder="https://..." required autocomplete="url"><button type="submit" id="analyzeButton">Periksa tautan <b>↗</b></button></label><div class="download-status" id="downloadStatus" role="status" aria-live="polite"></div>
+        <div class="media-result" id="mediaResult" hidden><div class="media-preview"><img id="mediaThumbnail" alt=""><div><span class="media-source" id="mediaSource"></span><h3 id="mediaTitle"></h3><small id="mediaMeta"></small></div></div><label class="quality-field">KUALITAS<select id="mediaQuality"><option value="best">Terbaik yang tersedia</option><option value="720">Video hingga 720p</option><option value="audio">Audio saja</option></select></label><button class="save-media" type="button" id="saveMedia">↓ &nbsp; Unduh ke perangkat <b>↗</b></button></div>
+      </form><div class="dialog-steps"><span>01 <b>Salin tautan</b></span><span>02 <b>Periksa media</b></span><span>03 <b>Unduh file</b></span></div><p class="dialog-footnote">Tautan harus publik. Unduh media yang kamu miliki atau berhak simpan.</p>
+    </div>
+  </dialog>
+  <script src="script.js"></script>
+</body>
+</html>
