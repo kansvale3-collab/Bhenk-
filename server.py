@@ -7,7 +7,6 @@ import signal, sys
 
 ROOT = Path(__file__).resolve().parent
 
-# DAFTAR PLATFORM YANG DIDUKUNG
 ALLOWED = {
     'tiktok.com', 'instagram.com', 'youtube.com', 'youtu.be', 'x.com', 'twitter.com',
     'spotify.com', 'open.spotify.com', 'music.apple.com', 'apple.com', 'pinterest.com',
@@ -22,13 +21,8 @@ FORMATS = {
     'audio': 'bestaudio/best'
 }
 
-# PENTING: User Agent & Cookie untuk menyamar sebagai browser Chrome asli
-# Ini kunci agar tidak diblokir TikTok/Instagram
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
-    'Referer': 'https://www.tiktok.com/'
-}
+# User Agent Chrome Terbaru (Windows 10/11) - Kunci agar tidak dianggap bot
+USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
 
 def valid_url(raw):
     try:
@@ -38,8 +32,7 @@ def valid_url(raw):
     except Exception:
         return False
 
-def get_ydl_opts(download=False, temp_dir=None):
-    """Fungsi helper untuk membuat opsi yt-dlp yang konsisten"""
+def get_ydl_opts(download=False, temp_dir=None, fmt=None):
     opts = {
         'quiet': True,
         'no_warnings': True,
@@ -47,16 +40,22 @@ def get_ydl_opts(download=False, temp_dir=None):
         'socket_timeout': 30,
         'retries': 3,
         'extractor_retries': 3,
-        'user_agent': HEADERS['User-Agent'], # Set UA secara eksplisit
-        'http_headers': HEADERS, # Inject header ke semua request
+        'user_agent': USER_AGENT,
+        'geo_bypass': True, # Penting untuk YouTube agar tidak kena block region
+        'no_check_certificate': True, # Kadang membantu di server cloud
+        'http_headers': {
+            'User-Agent': USER_AGENT,
+            'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Referer': 'https://www.youtube.com/'
+        }
     }
     
     if download:
         opts.update({
             'outtmpl': os.path.join(temp_dir, '%(title).120B.%(ext)s'),
             'merge_output_format': 'mp4',
-            'max_filesize': 500 * 1024 * 1024, # Batas 500MB
-            'format': FORMATS.get('best') # Default best, akan dioverride nanti
+            'max_filesize': 500 * 1024 * 1024,
+            'format': fmt or FORMATS['best']
         })
     else:
         opts['skip_download'] = True
@@ -80,12 +79,12 @@ class Handler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(ROOT), **kwargs)
     
     def log_message(self, fmt, *args):
-        print(f"[SERVER] {fmt % args}") # Log ke console Railway
+        print(f"[LOG] {fmt % args}")
     
     def do_GET(self):
         path = self.path.split('?', 1)[0]
         if path not in ('/', '/index.html', '/style.css', '/script.js'):
-            return self.reply({'error': 'Halaman tidak ditemukan.'}, 404)
+            return self.reply({'error': 'Tidak ditemukan.'}, 404)
         return super().do_GET()
     
     def reply(self, obj, status=200):
@@ -111,15 +110,19 @@ class Handler(SimpleHTTPRequestHandler):
             url = str(data.get('url', '')).strip()
             
             if not valid_url(url):
-                return self.reply({'error': 'Link tidak didukung atau tidak valid.'}, 400)
+                return self.reply({'error': 'Link tidak didukung.'}, 400)
             
             # --- API INFO ---
             if self.path == '/api/info':
                 try:
                     return self.reply(info(url))
                 except Exception as e:
-                    print(f"[ERROR INFO] {e}")
-                    return self.reply({'error': f'Gagal mengambil info: {str(e)[:100]}'}, 422)
+                    err_msg = str(e)
+                    # Deteksi error khusus YouTube Bot
+                    if 'not a bot' in err_msg or 'Sign in' in err_msg:
+                        print("[YOUTUBE BLOCK] Terdeteksi blokir bot YouTube.")
+                        return self.reply({'error': 'YouTube memblokir server sementara. Coba lagi dalam 5 menit atau gunakan link lain.'}, 429)
+                    return self.reply({'error': f'Gagal mengambil info: {err_msg[:100]}'}, 422)
             
             # --- API DOWNLOAD ---
             quality = data.get('quality', 'best')
@@ -130,8 +133,7 @@ class Handler(SimpleHTTPRequestHandler):
             print(f"[DOWNLOAD] Memproses: {url}")
             
             with tempfile.TemporaryDirectory(prefix='bhenk-') as temp:
-                opts = get_ydl_opts(download=True, temp_dir=temp)
-                opts['format'] = fmt # Override format sesuai pilihan user
+                opts = get_ydl_opts(download=True, temp_dir=temp, fmt=fmt)
                 
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     ydl.download([url])
@@ -144,7 +146,7 @@ class Handler(SimpleHTTPRequestHandler):
                 name = re.sub(r'[^\w\-_.]', '_', os.path.basename(path))
                 size = os.path.getsize(path)
                 
-                print(f"[SUCCESS] Mengirim file: {name} ({size} bytes)")
+                print(f"[SUCCESS] Mengirim: {name} ({size} bytes)")
                 
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/octet-stream')
@@ -160,8 +162,11 @@ class Handler(SimpleHTTPRequestHandler):
         except (ValueError, json.JSONDecodeError):
             self.reply({'error': 'Format request salah'}, 400)
         except Exception as e:
+            err_msg = str(e)
+            if 'not a bot' in err_msg or 'Sign in' in err_msg:
+                 return self.reply({'error': 'YouTube memblokir server sementara. Coba lagi nanti.'}, 429)
             print(f"[CRITICAL] {e}")
-            self.reply({'error': f'Unduhan gagal: {str(e)[:100]}'}, 422)
+            self.reply({'error': f'Unduhan gagal: {err_msg[:100]}'}, 422)
 
 def shutdown(sig, frame):
     print("Server dimatikan...")
