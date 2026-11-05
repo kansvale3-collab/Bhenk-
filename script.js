@@ -1,3 +1,205 @@
-const dialog=document.querySelector('#downloaderDialog');const urlInput=document.querySelector('#mediaUrl');const form=document.querySelector('#downloadForm');const status=document.querySelector('#downloadStatus');const result=document.querySelector('#mediaResult');const analyzeButton=document.querySelector('#analyzeButton');const saveButton=document.querySelector('#saveMedia');let analyzedUrl='';document.querySelectorAll('.platform-item').forEach(card=>card.addEventListener('click',()=>{document.querySelector('#downloaderTitle').textContent=`Unduh media dari ${card.dataset.platform}`;dialog.showModal();setTimeout(()=>urlInput.focus(),100)}));document.querySelector('#closeDownloader').addEventListener('click',()=>dialog.close());dialog.addEventListener('click',event=>{if(event.target===dialog)dialog.close()});dialog.addEventListener('close',()=>{result.hidden=true;status.textContent='';status.className='download-status';form.reset();analyzedUrl=''});
-form.addEventListener('submit',async event=>{event.preventDefault();const url=urlInput.value.trim();if(!url)return;analyzedUrl='';result.hidden=true;status.className='download-status';status.textContent='Memeriksa tautan…';analyzeButton.disabled=true;try{const response=await fetch('/api/info',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url})});const data=await response.json();if(!response.ok)throw new Error(data.error||'Tautan tidak dapat diproses.');analyzedUrl=url;document.querySelector('#mediaTitle').textContent=data.title||'Media siap diunduh';document.querySelector('#mediaSource').textContent=(data.extractor||'MEDIA').toUpperCase();document.querySelector('#mediaMeta').textContent=[data.duration?`${Math.floor(data.duration/60)}:${String(Math.floor(data.duration%60)).padStart(2,'0')}`:'',data.ext?.toUpperCase()].filter(Boolean).join(' · ');const img=document.querySelector('#mediaThumbnail');img.src=data.thumbnail||'';img.hidden=!data.thumbnail;result.hidden=false;status.textContent='Media ditemukan. Pilih kualitas lalu unduh.'}catch(error){status.className='download-status error';status.textContent=error.message}finally{analyzeButton.disabled=false}});
-saveButton.addEventListener('click',async()=>{if(!analyzedUrl)return;saveButton.disabled=true;status.className='download-status';status.textContent='Menyiapkan file…';try{const response=await fetch('/api/download',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url:analyzedUrl,quality:document.querySelector('#mediaQuality').value})});if(!response.ok){const data=await response.json();throw new Error(data.error||'Unduhan gagal.')}const blob=await response.blob();const match=(response.headers.get('content-disposition')||'').match(/filename="?([^";]+)"?/i);const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=match?match[1]:'bhenk-media';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),30000);status.textContent='Unduhan dimulai.'}catch(error){status.className='download-status error';status.textContent=error.message}finally{saveButton.disabled=false}});
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse
+from pathlib import Path
+import json, re, tempfile, os, glob
+import yt_dlp
+import signal, sys
+
+ROOT = Path(__file__).resolve().parent
+
+ALLOWED = {
+    'tiktok.com', 'instagram.com', 'youtube.com', 'youtu.be', 'x.com', 'twitter.com',
+    'spotify.com', 'open.spotify.com', 'music.apple.com', 'apple.com', 'pinterest.com',
+    'pin.it', 'facebook.com', 'fb.watch', 'threads.net', 'bilibili.com', 'b23.tv',
+    'pixiv.net', 'douyin.com', 'iesdouyin.com', 'xiaohongshu.com', 'xhslink.com',
+    'bandcamp.com', 'reddit.com', 'redd.it', 'terabox.com', '1024tera.com', 'teraboxapp.com'
+}
+
+FORMATS = {
+    'best': 'bestvideo*+bestaudio/best',
+    '720': 'bestvideo[height<=720]+bestaudio/best[height<=720]/best',
+    'audio': 'bestaudio/best'
+}
+
+# Header Chrome Terbaru + Extractor Args Khusus YouTube
+YDL_OPTS_BASE = {
+    'quiet': True,
+    'no_warnings': True,
+    'noplaylist': True,
+    'socket_timeout': 30,
+    'retries': 3,
+    'extractor_retries': 3,
+    'geo_bypass': True,
+    'no_check_certificate': True,
+    # KUNCI ANTI-BOT YOUTUBE:
+    'extractor_args': {
+        'youtube': {
+            'player_client': ['ios', 'web', 'android'], # Coba multiple client
+            'skip': ['translated_subs']
+        }
+    },
+    'http_headers': {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+        'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Referer': 'https://www.youtube.com/',
+        'Origin': 'https://www.youtube.com'
+    }
+}
+
+def valid_url(raw):
+    try:
+        u = urlparse(raw)
+        host = (u.hostname or '').lower().rstrip('.')
+        return u.scheme in ('http', 'https') and any(host == d or host.endswith('.' + d) for d in ALLOWED)
+    except Exception:
+        return False
+
+def get_opts(download=False, temp_dir=None, fmt=None):
+    opts = YDL_OPTS_BASE.copy()
+    if download:
+        opts.update({
+            'outtmpl': os.path.join(temp_dir, '%(title).120B.%(ext)s'),
+            'merge_output_format': 'mp4',
+            'max_filesize': 500 * 1024 * 1024,
+            'format': fmt or FORMATS['best']
+        })
+    else:
+        opts['skip_download'] = True
+    return opts
+
+def info(url):
+    opts = get_opts(download=False)
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        data = ydl.extract_info(url, download=False)
+        return {
+            'title': data.get('title') or 'Media',
+            'thumbnail': data.get('thumbnail') or '',
+            'duration': data.get('duration'),
+            'ext': data.get('ext') or '',
+            'extractor': data.get('extractor_key') or data.get('extractor') or 'Media'
+        }
+
+class Handler(SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=str(ROOT), **kwargs)
+    
+    def log_message(self, fmt, *args):
+        print(f"[LOG] {fmt % args}")
+    
+    def do_GET(self):
+        path = self.path.split('?', 1)[0]
+        if path not in ('/', '/index.html', '/style.css', '/script.js'):
+            return self.reply({'error': 'Tidak ditemukan.'}, 404)
+        return super().do_GET()
+    
+    def reply(self, obj, status=200):
+        raw = json.dumps(obj, ensure_ascii=False).encode()
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Content-Length', str(len(raw)))
+        self.send_header('Cache-Control', 'no-store')
+        self.end_headers()
+        self.wfile.write(raw)
+    
+    def body(self):
+        length = int(self.headers.get('Content-Length', '0'))
+        if length > 10000: raise ValueError('Payload terlalu besar')
+        return json.loads(self.rfile.read(length) or b'{}')
+    
+    def do_POST(self):
+        if self.path not in ('/api/info', '/api/download'):
+            return self.reply({'error': 'Endpoint tidak valid'}, 404)
+            
+        try:
+            data = self.body()
+            url = str(data.get('url', '')).strip()
+            
+            if not valid_url(url):
+                return self.reply({'error': 'Link tidak didukung.'}, 400)
+            
+            # --- API INFO ---
+            if self.path == '/api/info':
+                try:
+                    return self.reply(info(url))
+                except Exception as e:
+                    err_msg = str(e)
+                    if 'not a bot' in err_msg or 'Sign in' in err_msg:
+                        print("[YOUTUBE BLOCK] Terdeteksi blokir bot. Mencoba fallback...")
+                        # Fallback: Coba pakai extractor args berbeda
+                        try:
+                            opts_fallback = YDL_OPTS_BASE.copy()
+                            opts_fallback['extractor_args']['youtube']['player_client'] = ['tv']
+                            opts_fallback['skip_download'] = True
+                            with yt_dlp.YoutubeDL(opts_fallback) as ydl:
+                                data_fb = ydl.extract_info(url, download=False)
+                            return self.reply({
+                                'title': data_fb.get('title') or 'Media',
+                                'thumbnail': data_fb.get('thumbnail') or '',
+                                'duration': data_fb.get('duration'),
+                                'ext': data_fb.get('ext') or '',
+                                'extractor': 'YouTube (Fallback)'
+                            })
+                        except:
+                            return self.reply({'error': 'YouTube sedang memblokir server. Coba lagi dalam 5 menit.'}, 429)
+                    return self.reply({'error': f'Gagal mengambil info: {err_msg[:100]}'}, 422)
+            
+            # --- API DOWNLOAD ---
+            quality = data.get('quality', 'best')
+            fmt = FORMATS.get(quality)
+            if not fmt:
+                return self.reply({'error': 'Kualitas tidak valid'}, 400)
+                
+            print(f"[DOWNLOAD] Memproses: {url}")
+            
+            with tempfile.TemporaryDirectory(prefix='bhenk-') as temp:
+                opts = get_opts(download=True, temp_dir=temp, fmt=fmt)
+                
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    ydl.download([url])
+                
+                files = [f for f in glob.glob(os.path.join(temp, '*')) if os.path.isfile(f)]
+                if not files:
+                    return self.reply({'error': 'File gagal diunduh oleh server.'}, 422)
+                
+                path = files[0]
+                name = re.sub(r'[^\w\-_.]', '_', os.path.basename(path))
+                size = os.path.getsize(path)
+                
+                print(f"[SUCCESS] Mengirim: {name} ({size} bytes)")
+                
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/octet-stream')
+                self.send_header('Content-Length', str(size))
+                self.send_header('Content-Disposition', f'attachment; filename="{name}"')
+                self.send_header('Cache-Control', 'no-store')
+                self.end_headers()
+                
+                with open(path, 'rb') as f:
+                    while chunk := f.read(1024 * 512):
+                        self.wfile.write(chunk)
+                        
+        except (ValueError, json.JSONDecodeError):
+            self.reply({'error': 'Format request salah'}, 400)
+        except Exception as e:
+            err_msg = str(e)
+            if 'not a bot' in err_msg or 'Sign in' in err_msg:
+                 return self.reply({'error': 'YouTube memblokir server sementara. Coba lagi nanti.'}, 429)
+            print(f"[CRITICAL] {e}")
+            self.reply({'error': f'Unduhan gagal: {err_msg[:100]}'}, 422)
+
+def shutdown(sig, frame):
+    print("Server dimatikan...")
+    sys.exit(0)
+
+if __name__ == '__main__':
+    signal.signal(signal.SIGTERM, shutdown)
+    port = int(os.environ.get('PORT', '8000'))
+    print(f"🚀 BHENK.INC Server running on port {port}")
+    
+    server = ThreadingHTTPServer(('0.0.0.0', port), Handler)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
